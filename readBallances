@@ -1,0 +1,260 @@
+import requests  # pip install requests
+import json
+#import base64
+import hashlib
+import hmac
+import time #for nonce
+import pandas as pd
+import numpy as np
+
+class Bitfinex(object):
+    BASE_URL = "https://api.bitfinex.com/"
+    KEY = "lrRqcPnCgvcZhkyWbVm54GT8Qg3qzmB1DJbs5cy5Hrr"
+    SECRET = "2a3mlAe7ttqC7KKTnYHhNjBfLV1g0g2eS9RnnESHqRz"
+    SOURCE = 'Bitfinex'
+
+    def _nonce(self):
+        """
+        Returns a nonce
+        Used in authentication
+        """
+        return str(int(round(time.time() * 1000)))
+
+    def _headers(self, path, nonce):
+
+        signature = "/api/" + path + nonce
+        # print("Signing: " + signature)
+        h = hmac.new(self.SECRET.encode('utf-8'), signature.encode('utf-8'), hashlib.sha384)
+
+        return {
+            "bfx-nonce": nonce,
+            "bfx-apikey": self.KEY,
+            "bfx-signature": h.hexdigest(),
+            "content-type": "application/json"
+        }
+
+    def active_orders(self):
+        """
+        Fetch active orders
+        """
+        nonce = self._nonce()
+        body = {}
+        rawBody = json.dumps(body)
+        path = "v2/auth/r/orders"
+
+
+        print(self.BASE_URL + path)
+        print(nonce)
+
+
+        headers = self._headers(path, nonce, rawBody)
+
+        print(headers)
+        print(rawBody)
+
+
+        print("requests.post("+self.BASE_URL + path + ", headers=" + str(headers) + ", data=" + rawBody + ", verify=True)")
+        r = requests.post(self.BASE_URL + path, headers=headers, data=rawBody, verify=True)
+
+        if r.status_code == 200:
+          return r.json()
+        else:
+          print(r.status_code)
+          print(r)
+          return ''
+
+    def balances(self):
+        """
+        Fetch active orders
+        """
+        nonce = self._nonce()
+        path = "v2/auth/r/wallets"
+
+
+        # print(self.BASE_URL + path)
+        # print(nonce)
+
+
+        headers = self._headers(path, nonce)
+
+        # print(headers)
+        #
+        #
+        # print("requests.post("+self.BASE_URL + path + ", headers=" + str(headers) + ", verify=True)")
+        r = requests.post(self.BASE_URL + path, headers=headers, verify=True)
+
+        if r.status_code == 200:
+          return r.json()
+        else:
+          print(r.status_code)
+          print(r)
+          return ''
+
+    def balances_df(self):
+        data = self.balances()
+        df = pd.DataFrame(data, columns=['WALLET_TYPE',
+            'CURRENCY',
+            'BALANCE',
+            'UNSETTLED_INTEREST',
+            'BALANCE_AVAILABLE'])
+        df = df.groupby('CURRENCY')['BALANCE'].agg([np.sum]).reset_index()
+        df['Source'] = self.SOURCE
+        df['TimeStamp'] = pd.Timestamp.now()
+        return df
+
+    def prices(self, pair='USD'):
+        df_cur = self.balances_df()
+
+        tickers = ''
+        for t in df_cur.CURRENCY.unique():
+            tickers = tickers + ',' + 't' + str(t) + pair
+
+        url = 'https://api.bitfinex.com/v2/tickers?symbols='
+
+        r = requests.get(url + tickers)
+
+        df_prices = pd.DataFrame(r.json(), columns = [
+            'SYMBOL',
+            'BID',
+            'BID_SIZE',
+            'ASK',
+            'ASK_SIZE',
+            'DAILY_CHANGE',
+            'DAILY_CHANGE_PERC',
+            'LAST_PRICE',
+            'VOLUME',
+            'HIGH',
+            'LOW'
+          ])
+        df_prices['sym_short'] = df_prices['SYMBOL'].apply(lambda x: x[1:4])
+        df_prices[pair] = df_prices['LAST_PRICE']
+        df_prices = df_prices[['sym_short', pair]]
+
+        if pair == 'USD':
+            df_usd = pd.DataFrame([['USD', '1']], columns=['sym_short', 'USD'])
+            # print(df_btc)
+            df_prices = df_prices.append(df_usd, ignore_index=True)
+
+        if pair == 'BTC':
+            df_btc = pd.DataFrame([['BTC', '1']], columns=['sym_short', 'BTC'])
+            # print(df_btc)
+            df_prices = df_prices.append(df_btc, ignore_index=True)
+
+        # print(df_prices.to_string())
+        return df_prices
+
+    def balances_with_usd_btc(self):
+        df_balances = self.balances_df()
+
+        df_prices_usd = self.prices('USD')
+        df_prices_btc = self.prices('BTC')
+
+        df_usd_btc = pd.DataFrame([['USD', 1 / float(df_prices_usd.loc[df_prices_usd['sym_short'] == 'BTC', 'USD'].values)]], columns=['sym_short', 'BTC'])
+        df_prices_btc = df_prices_btc.append(df_usd_btc, ignore_index=True)
+
+        df_balances_with_usd_btc = pd.merge(df_balances, df_prices_usd,  right_on='sym_short', left_on='CURRENCY')
+        df_balances_with_usd_btc = pd.merge(df_balances_with_usd_btc, df_prices_btc, right_on='sym_short', left_on='CURRENCY')
+        return df_balances_with_usd_btc[['CURRENCY', 'sum', 'BTC', 'USD', 'Source', 'TimeStamp']]
+
+
+class Poloniex(object):
+    BASE_URL = "https://poloniex.com/tradingApi"
+    KEY = 'NKZFOV57-886X0G1H-3FNTKLZ7-F14KNOY1'
+    SECRET = '2a7f25cb5fc2151196ef6c915194dacc5557f8981627b17cb94225a81c4f3c7d45c6e3adad766ca4cc9e8e113a4bc9396e5bd0d3a20c311c6e2a1512ce12365a'
+    SOURCE = 'Poloniex'
+
+    def _nonce(self):
+        """
+        Returns a nonce
+        Used in authentication
+        """
+        return str(int(round(time.time() * 100000000)))
+
+    def _headers(self, data):
+
+        sig = hmac.new(self.SECRET.encode('utf-8'), data.encode('utf-8'), digestmod=hashlib.sha512)
+
+        return {
+            'Key': self.KEY,
+            'Sign': sig.hexdigest(),
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+
+    def balances(self):
+        nonce = self._nonce()
+        path = 'command=returnCompleteBalances&account=all&&nonce={}'.format(nonce)
+
+        headers = self._headers(path)
+
+        # print(headers)
+        # print("requests.post("+self.BASE_URL + path + ", headers=" + str(headers))
+        r = requests.post(self.BASE_URL, data=path, headers=headers)
+
+        if r.status_code == 200:
+          return r.json()
+        else:
+          print(r.status_code)
+          print(r)
+          return ''
+
+    def balances_df(self):
+        r = self.balances()
+        df_full = pd.DataFrame(r).transpose()
+        df_full['btcValue'] = pd.to_numeric(df_full.btcValue)
+        df_full['onOrders'] = pd.to_numeric(df_full.onOrders)
+        df_full['available'] = pd.to_numeric(df_full.available)
+        df_full['sum'] = df_full['available'] + df_full['onOrders']
+        df = df_full.loc[df_full['sum'] > 0, ['sum']]
+        df['CURRENCY'] = df.index
+        df = df.groupby('CURRENCY')['sum'].agg([np.sum]).reset_index()
+        df['Source'] = self.SOURCE
+        df['TimeStamp'] = pd.Timestamp.now()
+        return df
+
+    def prices_df(self):
+
+        path = 'https://poloniex.com/public?command=returnTicker'
+        r = requests.post(path)
+        return pd.DataFrame(r.json()).transpose()
+
+    def balances_btc_usd(self):
+        df = self.prices_df()
+        df_balances=self.balances_df()
+        df_btc = pd.DataFrame([['BTC', 1,df.loc['USDT_BTC','last']]], columns=['CURRENCY','BTC','USD'])
+        df_usd = pd.DataFrame([['USDT', 1/float(df.loc['USDT_BTC','last']), 1]], columns=['CURRENCY','BTC','USD'])
+        df_btc = df_btc.append(df_usd)
+        # print(df_balances.to_string())
+        # print(df_btc.to_string())
+
+        df = pd.merge(df_balances, df_btc, left_on='CURRENCY', right_on='CURRENCY')
+
+
+        return df[['CURRENCY', 'sum', 'BTC', 'USD', 'Source', 'TimeStamp']]
+
+b = Bitfinex()
+p = Poloniex()
+
+#
+# print(b.balances_df().to_string())
+# print(b.balances_with_usd_btc().to_string())
+# print(p.balances_df().to_string())
+# print(p.prices_df())
+# print(p.balances_btc_usd().to_string())
+
+n = 1
+
+while True:
+    print('Starting session nr: {}'.format(n))
+    df1 = b.balances_with_usd_btc()
+    df2 = p.balances_btc_usd()
+    df_end = pd.concat([df1, df2])
+    print(df_end.to_string())
+    df_end.to_hdf('balances.h5', 'balances', append=True)
+    print('Session nr {} finished, going to sleep'.format(n))
+    n += 1
+    time.sleep(60)
+
+
+#TODO: Znaleźć dlaczego USD nie wyświetla sięw balandes_with_usd_btc, gdzieś w joinie to się gubi
+#TODO: Zmienic USDT na USD w poloniexie
+#TODO: Dodać kolumny BTC i USD w poloniexie
