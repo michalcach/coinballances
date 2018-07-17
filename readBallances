@@ -9,8 +9,8 @@ import numpy as np
 
 class Bitfinex(object):
     BASE_URL = "https://api.bitfinex.com/"
-    KEY = "lrRqcPnCgvcZhkyWbVm54GT8Qg3qzmB1DJbs5cy5Hrr"
-    SECRET = "2a3mlAe7ttqC7KKTnYHhNjBfLV1g0g2eS9RnnESHqRz"
+    KEY = ""
+    SECRET = ""
     SOURCE = 'Bitfinex'
 
     def _nonce(self):
@@ -159,8 +159,8 @@ class Bitfinex(object):
 
 class Poloniex(object):
     BASE_URL = "https://poloniex.com/tradingApi"
-    KEY = 'NKZFOV57-886X0G1H-3FNTKLZ7-F14KNOY1'
-    SECRET = '2a7f25cb5fc2151196ef6c915194dacc5557f8981627b17cb94225a81c4f3c7d45c6e3adad766ca4cc9e8e113a4bc9396e5bd0d3a20c311c6e2a1512ce12365a'
+    KEY = ''
+    SECRET = ''
     SOURCE = 'Poloniex'
 
     def _nonce(self):
